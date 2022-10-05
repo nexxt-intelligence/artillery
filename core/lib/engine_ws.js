@@ -1,7 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
+// questionsSwitch bot-client 183 payload.eventType
 'use strict';
 
 const async = require('async');
@@ -35,7 +35,13 @@ WSEngine.prototype.createScenario = function (scenarioSpec, ee) {
   return self.compile(tasks, scenarioSpec.flow, ee);
 };
 
-function getMessageHandler(context, params, ee, callback) {
+function getMessageHandler(self, context, params, ee, callback) {
+  if (params.capture.handler !== undefined) {
+    const done = () => callback(null, context);
+    const error = (err) => callback(err, null);
+    return (event) =>
+      self.config.processor[params.capture.handler](event, error, done);
+  }
   return function messageHandler(event) {
     const { data } = event;
 
@@ -86,7 +92,7 @@ function getMessageHandler(context, params, ee, callback) {
             expected: v.expected,
             got: v.got,
             expression: v.expression,
-            strict: v.strict
+            strict: v.strict,
           });
         });
 
@@ -113,7 +119,7 @@ WSEngine.prototype.step = function (requestSpec, ee) {
       overValues: requestSpec.over,
       whileTrue: self.config.processor
         ? self.config.processor[requestSpec.whileTrue]
-        : undefined
+        : undefined,
     });
   }
 
@@ -163,7 +169,13 @@ WSEngine.prototype.step = function (requestSpec, ee) {
 
     if (captureOrMatch) {
       // only process response if we're capturing
-      context.ws.onmessage = getMessageHandler(context, params, ee, callback);
+      context.ws.onmessage = getMessageHandler(
+        self,
+        context,
+        params,
+        ee,
+        callback
+      );
     } else {
       // Reset onmessage to stop steps interfering with each other
       context.ws.onmessage = undefined;
@@ -174,6 +186,9 @@ WSEngine.prototype.step = function (requestSpec, ee) {
 
     if (payload) {
       if (typeof payload === 'object') {
+        if (payload.eventType === 'user-message') {
+          payload.timestamps.clientSend = new Date().toJSON();
+        }
         payload = JSON.stringify(payload);
       } else {
         payload = payload.toString();
@@ -219,7 +234,7 @@ function getWsOptions(config) {
 function getWsInstance(config, scenarioSpec, context, cb) {
   let wsArgs = {
     ...getWsOptions(config),
-    target: config.target
+    target: config.target,
   };
   const [{ connect }] = scenarioSpec;
 
@@ -247,12 +262,12 @@ function getWsInstance(config, scenarioSpec, context, cb) {
 
       const opt = getWsOptions({
         tls: config.tls,
-        ws: { subprotocols, headers, ...instanceConfig }
+        ws: { subprotocols, headers, ...instanceConfig },
       });
 
       wsArgs = {
         target: template(target, context),
-        ...opt
+        ...opt,
       };
     } else {
       wsArgs.target = template(connect, context);
@@ -327,7 +342,7 @@ function getWsConfig(config) {
 
     const agent = new HttpsProxyAgent({
       ...url.parse(proxyUrl),
-      ...proxyOptions
+      ...proxyOptions,
     });
 
     options.agent = agent;
